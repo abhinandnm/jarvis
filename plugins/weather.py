@@ -32,7 +32,7 @@ class WeatherPlugin(BasePlugin):
             }
         }
 
-    async def execute(self, arguments: Dict[str, Any]) -> str:
+    async def execute(self, tool_name: str, arguments: Dict[str, Any]) -> str:
         location = arguments.get("location", "").strip()
         if not location:
             return "Please provide a valid city name."

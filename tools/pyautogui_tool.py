@@ -18,10 +18,10 @@ class PyAutoGUITool:
         width, height = pyautogui.size()
         return {"width": width, "height": height}
 
-    def move_mouse(self, x: int, y: int) -> str:
-        """Moves the mouse cursor to specific coordinates."""
+    def move_mouse(self, x: int, y: int, duration: float = 0.3) -> str:
+        """Moves the mouse cursor to specific coordinates with optional animation duration."""
         try:
-            pyautogui.moveTo(x, y, duration=0.3)
+            pyautogui.moveTo(x, y, duration=duration)
             return f"Moved cursor to X: {x}, Y: {y}."
         except pyautogui.FailSafeException:
             return "Mouse movement aborted by failsafe trigger (cursor moved to screen corner)."
