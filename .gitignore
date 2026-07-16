@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+venv/
+*.egg-info/
+.env
+jarvis.db
+
+# Node / Electron
+ui/node_modules/
+ui/dist/
+ui/.vite/
+
+# Cache and temp
+cache/
+*.log
+*.tmp
+
+# OS
+.DS_Store
+Thumbs.db

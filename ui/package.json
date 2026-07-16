@@ -4,7 +4,7 @@
   "main": "main.js",
   "description": "Futuristic JARVIS Desktop Assistant Client UI",
   "scripts": {
-    "dev": "concurrently -k \"vite\" \"node -e \\\"setTimeout(() => {}, 1500)\\\" && electron .\"",
+    "dev": "concurrently -k \"vite\" \"electron .\"",
     "build": "vite build",
     "preview": "vite preview"
   },
@@ -20,7 +20,7 @@
     "@vitejs/plugin-react": "^4.3.0",
     "autoprefixer": "^10.4.19",
     "concurrently": "^8.2.2",
-    "electron": "^31.0.1",
+    "electron": "^31.7.7",
     "postcss": "^8.4.38",
     "tailwindcss": "^3.4.4",
     "vite": "^5.2.11"
