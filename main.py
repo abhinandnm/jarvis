@@ -44,6 +44,13 @@ async def lifespan(app: FastAPI):
     # 1. Initialize SQLite Database
     await init_db()
     
+    # 1b. Initialize Automation Scheduler and Folder Watcher
+    logger.info("Initializing Automation Scheduler...")
+    from automation.scheduler import jarvis_scheduler
+    from automation.folder_watcher import folder_watcher
+    jarvis_scheduler.initialize(broadcast_fn=manager.broadcast)
+    folder_watcher.initialize(broadcast_fn=manager.broadcast, loop=main_loop)
+    
     # 2. Start the wake word detector
     logger.info("Starting background wake-word listener...")
     wake_detector.start()
@@ -53,6 +60,11 @@ async def lifespan(app: FastAPI):
     # 3. Shutdown background task
     logger.info("Stopping background wake-word listener...")
     wake_detector.stop()
+    
+    # 3b. Shutdown scheduler and folder watcher
+    logger.info("Stopping Automation Scheduler and Folder Watchers...")
+    jarvis_scheduler.shutdown()
+    folder_watcher.shutdown()
 
 # Create FastAPI app
 app = FastAPI(
