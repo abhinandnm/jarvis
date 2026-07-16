@@ -1,0 +1,104 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    background-color: transparent;
+    color: #e2e8f0;
+    font-family: 'Inter', sans-serif;
+  }
+}
+
+/* Glassmorphism Panels */
+.glass-panel {
+  background: rgba(10, 25, 47, 0.65);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(0, 240, 255, 0.15);
+  box-shadow: 0 8px 32px 0 rgba(2, 12, 27, 0.37);
+}
+
+.glass-panel-light {
+  background: rgba(0, 240, 255, 0.03);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(0, 240, 255, 0.08);
+}
+
+/* Cyber Glows */
+.cyber-glow {
+  filter: drop-shadow(0 0 8px rgba(0, 240, 255, 0.5));
+}
+
+.cyber-glow-strong {
+  filter: drop-shadow(0 0 15px rgba(0, 240, 255, 0.8));
+}
+
+.text-glow {
+  text-shadow: 0 0 8px rgba(0, 240, 255, 0.6);
+}
+
+.text-glow-orange {
+  text-shadow: 0 0 8px rgba(249, 115, 22, 0.6);
+}
+
+/* Hologram HUD Scanline Effect */
+.hud-scanlines {
+  position: relative;
+  overflow: hidden;
+}
+
+.hud-scanlines::before {
+  content: " ";
+  display: block;
+  position: absolute;
+  top: 0; left: 0; bottom: 0; right: 0;
+  background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 240, 255, 0.06) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.03), rgba(0, 255, 0, 0.01), rgba(0, 0, 255, 0.03));
+  z-index: 2;
+  background-size: 100% 4px, 6px 100%;
+  pointer-events: none;
+}
+
+/* Scrollbar customization */
+::-webkit-scrollbar {
+  width: 4px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(10, 25, 47, 0.1);
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(0, 240, 255, 0.3);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 240, 255, 0.6);
+}
+
+/* Scrollable container styling */
+.chat-container {
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+
+/* Circular glowing pulse animation */
+@keyframes voice-pulse {
+  0% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(0, 240, 255, 0.5);
+  }
+  70% {
+    transform: scale(1.05);
+    box-shadow: 0 0 0 15px rgba(0, 240, 255, 0);
+  }
+  100% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(0, 240, 255, 0);
+  }
+}
+
+.voice-active-pulse {
+  animation: voice-pulse 1.8s infinite;
+}
