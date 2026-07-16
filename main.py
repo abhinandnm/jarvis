@@ -2,6 +2,8 @@ import uvicorn
 import logging
 import asyncio
 import os
+import sys
+import time
 from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -61,77 +63,194 @@ def reload_settings_from_env():
         settings.GITHUB_TOKEN = data["GITHUB_TOKEN"]
 
 
-def first_run_setup():
-    """Interactive first-run setup — asks for API key if none found in .env."""
-    has_gemini = bool(settings.GEMINI_API_KEY)
-    has_openai = bool(settings.OPENAI_API_KEY)
+PLACEHOLDER_KEYS = {
+    "your_gemini_api_key_here", "your_openai_api_key_here",
+    "your-api-key-here", "sk-xxx", "", "none", "null"
+}
 
-    if has_gemini or has_openai:
-        # Keys already configured, skip setup
-        return
 
+def _is_valid_key(key: str | None) -> bool:
+    """Returns True only if the key is a real, non-placeholder value."""
+    if not key:
+        return False
+    return key.strip().lower() not in PLACEHOLDER_KEYS and len(key.strip()) > 8
+
+
+def _type_slow(text: str, delay: float = 0.02):
+    """Prints text character-by-character for a cinematic effect."""
+    for char in text:
+        sys.stdout.write(char)
+        sys.stdout.flush()
+        time.sleep(delay)
     print()
-    print("=" * 60)
-    print("  J.A.R.V.I.S. FIRST-TIME SETUP")
-    print("  No AI API key detected. Let's configure one now.")
-    print("=" * 60)
-    print()
-    print("  Which AI provider would you like to use?")
-    print("    1) Google Gemini  (recommended, free tier available)")
-    print("    2) OpenAI GPT")
-    print("    3) Ollama  (local, no API key needed)")
-    print()
 
-    while True:
-        choice = input("  Select provider [1/2/3]: ").strip()
-        if choice in ("1", "2", "3"):
-            break
-        print("  Please enter 1, 2, or 3.")
 
-    if choice == "1":
-        provider = "gemini"
+def _print_stark_banner():
+    """Prints the Stark Industries boot banner."""
+    banner = r"""
+    ╔═══════════════════════════════════════════════════════════════╗
+    ║                                                               ║
+    ║         ██╗ █████╗ ██████╗ ██╗   ██╗██╗███████╗              ║
+    ║         ██║██╔══██╗██╔══██╗██║   ██║██║██╔════╝              ║
+    ║         ██║███████║██████╔╝██║   ██║██║███████╗              ║
+    ║    ██   ██║██╔══██║██╔══██╗╚██╗ ██╔╝██║╚════██║              ║
+    ║    ╚█████╔╝██║  ██║██║  ██║ ╚████╔╝ ██║███████║              ║
+    ║     ╚════╝ ╚═╝  ╚═╝╚═╝  ╚═╝  ╚═══╝  ╚═╝╚══════╝              ║
+    ║                                                               ║
+    ║       Just A Rather Very Intelligent System  v1.0.0           ║
+    ║                  STARK INDUSTRIES                             ║
+    ║                                                               ║
+    ╚═══════════════════════════════════════════════════════════════╝
+    """
+    print(banner)
+
+
+def pre_boot_setup():
+    """Interactive pre-boot setup — ALWAYS runs on every start.
+    Checks API configuration, prompts for keys if missing/placeholder,
+    then waits for user confirmation before booting."""
+
+    os.system("cls" if os.name == "nt" else "clear")
+    _print_stark_banner()
+
+    provider = settings.AI_PROVIDER or "gemini"
+    gemini_ok = _is_valid_key(settings.GEMINI_API_KEY)
+    openai_ok = _is_valid_key(settings.OPENAI_API_KEY)
+
+    # Determine if current provider has a valid key
+    current_key_ok = (
+        (provider == "gemini" and gemini_ok) or
+        (provider == "openai" and openai_ok) or
+        (provider == "ollama")
+    )
+
+    if not current_key_ok:
+        # ── API Key Setup ─────────────────────────────────────────
+        print("  ┌─────────────────────────────────────────────────┐")
+        print("  │         SYSTEM CONFIGURATION REQUIRED           │")
+        print("  │     No valid AI API key detected, Sir.          │")
+        print("  └─────────────────────────────────────────────────┘")
         print()
-        print("  Get a free Gemini API key at: https://aistudio.google.com/apikey")
-        api_key = input("  Enter your Gemini API key: ").strip()
-        if api_key:
-            set_env_value("AI_PROVIDER", "gemini")
-            set_env_value("GEMINI_API_KEY", api_key)
-            settings.AI_PROVIDER = "gemini"
-            settings.GEMINI_API_KEY = api_key
-            print(f"  ✓ Gemini API key saved to {ENV_FILE}")
-        else:
-            print("  ✗ No key entered. You can set it later with: set api key")
-
-    elif choice == "2":
-        provider = "openai"
+        print("  Which AI provider shall I connect to?")
         print()
-        print("  Get an OpenAI API key at: https://platform.openai.com/api-keys")
-        api_key = input("  Enter your OpenAI API key: ").strip()
-        if api_key:
-            set_env_value("AI_PROVIDER", "openai")
-            set_env_value("OPENAI_API_KEY", api_key)
-            settings.AI_PROVIDER = "openai"
-            settings.OPENAI_API_KEY = api_key
-            print(f"  ✓ OpenAI API key saved to {ENV_FILE}")
+        print("    [1]  Google Gemini   ─  recommended, free tier")
+        print("    [2]  OpenAI GPT      ─  GPT-4o, requires paid key")
+        print("    [3]  Ollama          ─  fully local, no key needed")
+        print()
+
+        while True:
+            choice = input("  Select provider [1/2/3]: ").strip()
+            if choice in ("1", "2", "3"):
+                break
+            print("  Invalid selection. Please enter 1, 2, or 3.")
+
+        if choice == "1":
+            print()
+            print("  ╭─ Get a free Gemini API key at:")
+            print("  │  https://aistudio.google.com/apikey")
+            print("  ╰────────────────────────────────────")
+            print()
+            api_key = input("  Enter your Gemini API key: ").strip()
+            if api_key and api_key.lower() not in PLACEHOLDER_KEYS:
+                set_env_value("AI_PROVIDER", "gemini")
+                set_env_value("GEMINI_API_KEY", api_key)
+                settings.AI_PROVIDER = "gemini"
+                settings.GEMINI_API_KEY = api_key
+                print("  ✓ Gemini API key saved.")
+            else:
+                print("  ✗ No valid key entered. You can set it later: set api key")
+
+        elif choice == "2":
+            print()
+            print("  ╭─ Get an OpenAI API key at:")
+            print("  │  https://platform.openai.com/api-keys")
+            print("  ╰────────────────────────────────────")
+            print()
+            api_key = input("  Enter your OpenAI API key: ").strip()
+            if api_key and api_key.lower() not in PLACEHOLDER_KEYS:
+                set_env_value("AI_PROVIDER", "openai")
+                set_env_value("OPENAI_API_KEY", api_key)
+                settings.AI_PROVIDER = "openai"
+                settings.OPENAI_API_KEY = api_key
+                print("  ✓ OpenAI API key saved.")
+            else:
+                print("  ✗ No valid key entered. You can set it later: set api key")
+
+        elif choice == "3":
+            set_env_value("AI_PROVIDER", "ollama")
+            settings.AI_PROVIDER = "ollama"
+            print("  ✓ Ollama selected. Ensure Ollama is running on localhost:11434")
+
+        print()
+    else:
+        # Key is valid — show current config
+        provider_display = settings.AI_PROVIDER.upper()
+        if settings.AI_PROVIDER == "gemini":
+            masked = f"...{settings.GEMINI_API_KEY[-6:]}"
+        elif settings.AI_PROVIDER == "openai":
+            masked = f"...{settings.OPENAI_API_KEY[-6:]}"
         else:
-            print("  ✗ No key entered. You can set it later with: set api key")
+            masked = "N/A (local)"
 
-    elif choice == "3":
-        set_env_value("AI_PROVIDER", "ollama")
-        settings.AI_PROVIDER = "ollama"
-        print("  ✓ Ollama selected. Make sure Ollama is running on localhost:11434")
+        print(f"  AI Provider:  {provider_display}")
+        print(f"  API Key:      {masked}")
+        print(f"  Model:        {getattr(settings, f'{settings.AI_PROVIDER.upper()}_MODEL', 'default')}")
+        print()
 
-    # Optional: ask for GitHub token
+    # ── Press Enter to Boot ────────────────────────────────────
+    print("  ─" * 30)
+    input("\n  Press ENTER to initialize J.A.R.V.I.S. ...\n")
+
+
+def cinematic_boot_sequence():
+    """Plays an Iron Man cinematic boot sequence in the terminal."""
+    os.system("cls" if os.name == "nt" else "clear")
+
+    # Arc Reactor power-up
+    _type_slow("  [STARK INDUSTRIES — CLASSIFIED]")
     print()
-    gh_token = input("  (Optional) Enter GitHub token for plugin [press Enter to skip]: ").strip()
-    if gh_token:
-        set_env_value("GITHUB_TOKEN", gh_token)
-        print("  ✓ GitHub token saved.")
+    time.sleep(0.3)
+
+    _type_slow("  Initializing Arc Reactor core.............. ", 0.015)
+    time.sleep(0.2)
+    print("  ████████████████████████████████ 100%")
+    time.sleep(0.3)
+
+    boot_steps = [
+        ("Neural interface calibration",       0.25),
+        ("Holographic display matrices",       0.20),
+        ("Repulsor systems diagnostics",       0.15),
+        ("Voice recognition module",           0.20),
+        ("Long-term memory banks",             0.15),
+        ("Agent orchestrator framework",       0.20),
+        ("Tool registry integration",          0.15),
+        ("Threat assessment protocols",        0.10),
+        ("Communication arrays",              0.15),
+    ]
 
     print()
-    print("  Setup complete! Starting J.A.R.V.I.S...")
-    print("=" * 60)
+    for step_name, delay in boot_steps:
+        sys.stdout.write(f"  ► {step_name:<40s}")
+        sys.stdout.flush()
+        time.sleep(delay)
+        print("[  OK  ]")
+
     print()
+    time.sleep(0.3)
+    _type_slow("  ╔═══════════════════════════════════════════════╗", 0.008)
+    _type_slow("  ║                                               ║", 0.008)
+    _type_slow("  ║    All systems operational, Sir.              ║", 0.008)
+    _type_slow("  ║    J.A.R.V.I.S. is at your service.           ║", 0.008)
+    _type_slow("  ║                                               ║", 0.008)
+    _type_slow("  ╚═══════════════════════════════════════════════╝", 0.008)
+    print()
+    time.sleep(0.5)
+
+    _type_slow("  \"Good evening, Sir. All systems are nominal.")
+    _type_slow("   I've prepared a full diagnostic of your environment.")
+    _type_slow("   Shall we begin?\"")
+    print()
+    time.sleep(0.5)
 
 # Setup log formatting
 logging.basicConfig(
@@ -371,12 +490,16 @@ app.include_router(ws_router)
 app.mount("/cache", StaticFiles(directory="cache"), name="cache")
 
 if __name__ == "__main__":
-    # Run first-time interactive setup if no API key found
-    first_run_setup()
+    # Phase 1: Pre-boot config check — always runs
+    pre_boot_setup()
 
+    # Phase 2: Cinematic Iron Man boot sequence
+    cinematic_boot_sequence()
+
+    # Phase 3: Launch the server
     uvicorn.run(
         "main.py:app" if os.getenv("DEV") else app,
         host=settings.API_HOST,
         port=settings.API_PORT,
-        reload=False  # Re-loading can cause multi-thread audio issues, better to run static
+        reload=False  # Re-loading can cause multi-thread audio issues
     )
