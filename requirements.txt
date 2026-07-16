@@ -22,3 +22,4 @@ pytesseract
 screen-brightness-control
 pyperclip
 httpx
+Pillow

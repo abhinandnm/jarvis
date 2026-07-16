@@ -6,7 +6,7 @@ export default defineConfig({
   base: './', // Ensures assets load correctly from local paths in Electron build
   server: {
     port: 5173,
-    strictPort: true
+    strictPort: false
   },
   build: {
     outDir: 'dist',
