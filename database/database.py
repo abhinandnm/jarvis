@@ -30,6 +30,8 @@ async def get_db():
 async def init_db():
     """Initializes database tables."""
     try:
+        # Import models here to register tables in Base.metadata before creation
+        import database.models
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
         logger.info("Database initialized successfully.")

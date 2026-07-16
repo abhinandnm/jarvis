@@ -36,6 +36,47 @@ def on_wake_word_detected():
 # Initialize wake word detector
 wake_detector = WakeWordDetector(on_wake_callback=on_wake_word_detected)
 
+async def console_input_loop():
+    """Reads user directives from the server terminal console asynchronously."""
+    await asyncio.sleep(3.0)  # Wait for startup print logs to quiet down
+    print("\n" + "="*60)
+    print("  J.A.R.V.I.S. INTERACTIVE CONSOLE ONLINE")
+    print("  Type your commands/queries directly into the console, Sir.")
+    print("="*60 + "\n")
+    
+    from core.agent import agent_orchestrator
+    
+    while True:
+        try:
+            # Read input in a separate thread so as not to block the event loop
+            user_input = await asyncio.to_thread(input, "Sir > ")
+            user_input = user_input.strip()
+            if not user_input:
+                continue
+            if user_input.lower() in ["exit", "quit"]:
+                print("Deactivating console input link...")
+                break
+                
+            print("Communicating with agent orchestrator...")
+            print("Jarvis: ", end="", flush=True)
+            
+            async def dummy_broadcast(msg):
+                # Dummy handler for websocket messages
+                pass
+                
+            async for response in agent_orchestrator.process_user_input(
+                user_input,
+                websocket_broadcast_fn=dummy_broadcast
+            ):
+                if response["type"] == "text":
+                    # Stream the text output directly to the console
+                    print(response["content"], end="", flush=True)
+            print("\n")
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            print(f"\nDirective execution failure: {e}\n")
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global main_loop
@@ -51,6 +92,9 @@ async def lifespan(app: FastAPI):
     jarvis_scheduler.initialize(broadcast_fn=manager.broadcast)
     folder_watcher.initialize(broadcast_fn=manager.broadcast, loop=main_loop)
     
+    # 1c. Start Console Input Reader Task
+    cli_task = asyncio.create_task(console_input_loop())
+    
     # 2. Start the wake word detector
     logger.info("Starting background wake-word listener...")
     wake_detector.start()
@@ -65,6 +109,13 @@ async def lifespan(app: FastAPI):
     logger.info("Stopping Automation Scheduler and Folder Watchers...")
     jarvis_scheduler.shutdown()
     folder_watcher.shutdown()
+    
+    # 3c. Cancel Console input link
+    cli_task.cancel()
+    try:
+        await cli_task
+    except asyncio.CancelledError:
+        pass
 
 # Create FastAPI app
 app = FastAPI(

@@ -16,3 +16,9 @@ pyautogui
 playwright
 pytest
 pytest-asyncio
+apscheduler
+watchdog
+pytesseract
+screen-brightness-control
+pyperclip
+httpx

@@ -16,8 +16,20 @@ def event_loop():
 @pytest.mark.asyncio
 async def test_database_initialization():
     """Verify that SQLite database initializes and creates tables."""
-    # Force settings to use an in-memory testing database
+    # Force settings to use an in-memory testing database and recreate engine
     settings.DATABASE_URL = "sqlite+aiosqlite:///:memory:"
+    
+    import database.database
+    from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
+    database.database.engine = create_async_engine(settings.DATABASE_URL, echo=False)
+    database.database.AsyncSessionLocal = async_sessionmaker(
+        bind=database.database.engine,
+        class_=AsyncSession,
+        expire_on_commit=False
+    )
+    
+    global AsyncSessionLocal
+    AsyncSessionLocal = database.database.AsyncSessionLocal
     
     # Initialize DB
     await init_db()

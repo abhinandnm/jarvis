@@ -3,14 +3,22 @@ import {
   Mic, MicOff, Settings as SettingsIcon, X, Send, 
   Cpu, HardDrive, Battery, Thermometer, Radio, Volume2, 
   RefreshCw, Power, MessageSquare, Terminal, Lock, ShieldAlert,
-  Clock, ListCollapse, Play, AlertCircle, Eye, FileSearch, Trash2
+  Clock, ListCollapse, Play, AlertCircle, Eye, FileSearch, Trash2,
+  Calendar, Github, Clipboard, Bell, Network, Database, Image,
+  FolderOpen, LayoutGrid, Check, Plus, Moon
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+
+// Component Imports
+import ParticleField from './components/ParticleField';
+import SystemRingChart from './components/SystemRingChart';
+import NotificationToast from './components/NotificationToast';
+import CommandPalette from './components/CommandPalette';
 
 export default function App() {
   // Conversational State
   const [messages, setMessages] = useState([
-    { role: 'assistant', content: 'Online and operational. Hover grids are calibrated. How may I assist you today, Sir?' }
+    { role: 'assistant', content: 'Online and operational. Systems diagnostics initialized. How may I assist you today, Sir?' }
   ]);
   const [status, setStatus] = useState('idle'); // idle, listening, thinking, speaking
   const [inputText, setInputText] = useState('');
@@ -19,7 +27,8 @@ export default function App() {
   
   // HUD UI Configurations
   const [showSettings, setShowSettings] = useState(false);
-  const [activeHudTab, setActiveHudTab] = useState('diagnostics'); // diagnostics, processes, scheduler
+  const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
+  const [activeHudTab, setActiveHudTab] = useState('diagnostics'); 
   
   // Real-time Metrics
   const [systemStats, setSystemStats] = useState({
@@ -29,12 +38,39 @@ export default function App() {
     battery: 100,
     power_plugged: true,
     temperature: 0,
-    network_status: 'online'
+    network_status: 'online',
+    gpu_usage: 0,
+    gpu_name: 'N/A',
+    gpu_memory: 0
   });
   const [processList, setProcessList] = useState([]);
+  const [networkInfo, setNetworkInfo] = useState({});
+  const [clipboardHistory, setClipboardHistory] = useState([]);
+  const [memoryEntries, setMemoryEntries] = useState([]);
+  const [scheduledTasks, setScheduledTasks] = useState([]);
+  const [pluginsList, setPluginsList] = useState([]);
+  const [folderWatchers, setFolderWatchers] = useState([]);
   
+  // Notification Toast state
+  const [notifications, setNotifications] = useState([]);
+
   // J.A.R.V.I.S. Security Gate Modal State
   const [permissionRequest, setPermissionRequest] = useState(null); // { id, tool, arguments }
+
+  // Memory adding helper
+  const [newMemoryKey, setNewMemoryKey] = useState('');
+  const [newMemoryValue, setNewMemoryValue] = useState('');
+  const [newMemoryCategory, setNewMemoryCategory] = useState('general');
+
+  // Scheduler task adding helper
+  const [newTaskName, setNewTaskName] = useState('');
+  const [newTaskCommand, setNewTaskCommand] = useState('');
+  const [newTaskTrigger, setNewTaskTrigger] = useState('interval');
+  const [newTaskInterval, setNewTaskInterval] = useState(60);
+
+  // Folder watcher adding helper
+  const [newWatchPath, setNewWatchPath] = useState('');
+  const [newWatchAutoOrganize, setNewWatchAutoOrganize] = useState(false);
 
   const [config, setConfig] = useState({
     ai_provider: 'gemini',
@@ -80,14 +116,31 @@ export default function App() {
     fetchSettings();
     updateStats();
     updateProcesses();
+    fetchMemories();
+    fetchSchedulerTasks();
+    fetchPlugins();
+    fetchClipboard();
+    fetchWatchers();
 
     // Poll system diagnostics
-    const statsInterval = setInterval(updateStats, 2500);
+    const statsInterval = setInterval(updateStats, 2000);
     const procInterval = setInterval(updateProcesses, 4000);
+    const clipInterval = setInterval(fetchClipboard, 3000);
+
+    // Ctrl+K key listener for command palette
+    const handleKeyDown = (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+        e.preventDefault();
+        setIsCommandPaletteOpen(prev => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
 
     return () => {
       clearInterval(statsInterval);
       clearInterval(procInterval);
+      clearInterval(clipInterval);
+      window.removeEventListener('keydown', handleKeyDown);
     };
   }, []);
 
@@ -146,13 +199,23 @@ export default function App() {
           break;
           
         case 'permission_request':
-          // Halt assistant voice queue and prompt authorization card
           stopAllAudioPlayback();
           setPermissionRequest({
             id: data.id,
             tool: data.tool,
             arguments: data.arguments
           });
+          break;
+
+        case 'notification':
+          // Add notification to top alert center
+          const newNotif = {
+            id: data.id || Math.random().toString(),
+            content: data.content,
+            level: data.level || 'info',
+            timestamp: data.timestamp || new Date().toISOString()
+          };
+          setNotifications(prev => [newNotif, ...prev].slice(0, 5));
           break;
           
         default:
@@ -170,6 +233,9 @@ export default function App() {
     };
   };
 
+  // ----------------------------------------------------
+  // Backend fetch API calls
+  // ----------------------------------------------------
   const fetchSettings = async () => {
     try {
       const res = await fetch('http://127.0.0.1:8000/api/settings');
@@ -210,6 +276,141 @@ export default function App() {
     }
   };
 
+  const fetchMemories = async () => {
+    try {
+      const res = await fetch('http://127.0.0.1:8000/api/memory');
+      const data = await res.json();
+      setMemoryEntries(data);
+    } catch (e) {
+      console.error('Failed to load memories:', e);
+    }
+  };
+
+  const fetchSchedulerTasks = async () => {
+    try {
+      const res = await fetch('http://127.0.0.1:8000/api/scheduler');
+      const data = await res.json();
+      setScheduledTasks(data);
+    } catch (e) {
+      console.error('Failed to load tasks:', e);
+    }
+  };
+
+  const fetchPlugins = async () => {
+    try {
+      const res = await fetch('http://127.0.0.1:8000/api/plugins');
+      const data = await res.json();
+      setPluginsList(data);
+    } catch (e) {
+      console.error('Failed to load plugins:', e);
+    }
+  };
+
+  const fetchClipboard = async () => {
+    try {
+      const res = await fetch('http://127.0.0.1:8000/api/clipboard');
+      const data = await res.json();
+      setClipboardHistory(data);
+    } catch (e) {
+      console.log('Clipboard history offline.');
+    }
+  };
+
+  const fetchWatchers = async () => {
+    try {
+      const res = await fetch('http://127.0.0.1:8000/api/watchers');
+      const data = await res.json();
+      setFolderWatchers(data);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  // ----------------------------------------------------
+  // Dynamic add operations
+  // ----------------------------------------------------
+  const handleAddMemory = async (e) => {
+    e.preventDefault();
+    if (!newMemoryKey || !newMemoryValue) return;
+    try {
+      await fetch('http://127.0.0.1:8000/api/memory', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key: newMemoryKey, value: newMemoryValue, category: newMemoryCategory })
+      });
+      setNewMemoryKey('');
+      setNewMemoryValue('');
+      fetchMemories();
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleDeleteMemory = async (key) => {
+    try {
+      await fetch(`http://127.0.0.1:8000/api/memory/${key}`, { method: 'DELETE' });
+      fetchMemories();
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleAddSchedulerTask = async (e) => {
+    e.preventDefault();
+    if (!newTaskName || !newTaskCommand) return;
+    try {
+      await fetch('http://127.0.0.1:8000/api/scheduler', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: newTaskName,
+          command: newTaskCommand,
+          trigger_type: newTaskTrigger,
+          interval_seconds: parseInt(newTaskInterval)
+        })
+      });
+      setNewTaskName('');
+      setNewTaskCommand('');
+      fetchSchedulerTasks();
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleDeleteSchedulerTask = async (taskId) => {
+    try {
+      await fetch(`http://127.0.0.1:8000/api/scheduler/${taskId}`, { method: 'DELETE' });
+      fetchSchedulerTasks();
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleAddWatcher = async (e) => {
+    e.preventDefault();
+    if (!newWatchPath) return;
+    try {
+      await fetch('http://127.0.0.1:8000/api/watchers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ folder_path: newWatchPath, auto_organize: newWatchAutoOrganize })
+      });
+      setNewWatchPath('');
+      fetchWatchers();
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleStopWatcher = async (path) => {
+    try {
+      await fetch(`http://127.0.0.1:8000/api/watchers?folder_path=${encodeURIComponent(path)}`, { method: 'DELETE' });
+      fetchWatchers();
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
   const handleSaveSettings = async (updatedConfig) => {
     try {
       await fetch('http://127.0.0.1:8000/api/settings', {
@@ -229,9 +430,7 @@ export default function App() {
   // ----------------------------------------------------
   const handlePermissionDecision = (approved) => {
     if (!permissionRequest) return;
-    
-    console.log(`Sending authorization decision: approved=${approved} for request ${permissionRequest.id}`);
-    
+    console.log(`Permission decision: approved=${approved}`);
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({
         type: 'permission_response',
@@ -239,8 +438,6 @@ export default function App() {
         approved: approved
       }));
     }
-    
-    // Clear prompt card
     setPermissionRequest(null);
     setStatus('thinking');
   };
@@ -268,22 +465,13 @@ export default function App() {
     setStatus('speaking');
     setIsPlayingAudio(true);
     const base64Data = audioQueueRef.current.shift();
-    
     const audioUrl = `data:audio/mp3;base64,${base64Data}`;
     const audio = new Audio(audioUrl);
     currentAudioRef.current = audio;
     
-    audio.onended = () => {
-      playNextAudioQueueSegment();
-    };
-    
-    audio.onerror = () => {
-      playNextAudioQueueSegment();
-    };
-    
-    audio.play().catch(err => {
-      playNextAudioQueueSegment();
-    });
+    audio.onended = () => playNextAudioQueueSegment();
+    audio.onerror = () => playNextAudioQueueSegment();
+    audio.play().catch(() => playNextAudioQueueSegment());
   };
 
   const queueAudioSegment = (base64Data) => {
@@ -298,7 +486,6 @@ export default function App() {
   // ----------------------------------------------------
   const triggerMicrophoneRecording = async () => {
     stopAllAudioPlayback();
-    
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({ type: 'interrupt' }));
     }
@@ -315,7 +502,6 @@ export default function App() {
       processorRef.current = processor;
       
       const audioBuffers = [];
-      
       processor.onaudioprocess = (e) => {
         const inputData = e.inputBuffer.getChannelData(0);
         audioBuffers.push(new Float32Array(inputData));
@@ -363,10 +549,8 @@ export default function App() {
             data: base64Wav
           }));
         }
-        
         setMicRecording(false);
       };
-      
     } catch (err) {
       console.error('Mic initialization error:', err);
       setStatus('idle');
@@ -376,9 +560,7 @@ export default function App() {
 
   const handleMicToggle = () => {
     if (micRecording) {
-      if (stopRecordingCallback.current) {
-        stopRecordingCallback.current();
-      }
+      if (stopRecordingCallback.current) stopRecordingCallback.current();
     } else {
       triggerMicrophoneRecording();
     }
@@ -389,7 +571,6 @@ export default function App() {
     if (!inputText.trim()) return;
 
     stopAllAudioPlayback();
-
     const textToSend = inputText;
     setInputText('');
     setStreamingResponse('');
@@ -405,14 +586,16 @@ export default function App() {
     }
   };
 
-  // Helper trigger to trigger visual cache reload on screenshot/webcam trace
+  const handleExecutePaletteCommand = (command) => {
+    setInputText(command);
+  };
+
   useEffect(() => {
     if (streamingResponse.includes('[Screenshot Analyzed]') || streamingResponse.includes('[Webcam Analyzed]')) {
       setCacheBuster(Date.now());
     }
   }, [streamingResponse]);
 
-  // Clean final tokens aggregation
   useEffect(() => {
     if (status === 'idle' && streamingResponse) {
       setMessages(prev => [...prev, { role: 'assistant', content: streamingResponse }]);
@@ -424,37 +607,39 @@ export default function App() {
   const minimizeApp = () => window.electronAPI?.minimizeWindow();
   const closeApp = () => window.electronAPI?.closeWindow();
 
-  // Organizer manual dispatch helper
-  const handleQuickOrganize = async () => {
-    stopAllAudioPlayback();
-    setStatus('thinking');
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({
-        type: 'chat',
-        text: 'Organize my Downloads directory'
-      }));
-    }
-  };
-
   return (
-    <div className="h-screen w-screen glass-panel rounded-2xl flex flex-col overflow-hidden border border-cyber-blue/30 hud-scanlines text-white font-inter select-none relative">
+    <div className="h-screen w-screen bg-cyber-darker text-white font-inter select-none overflow-hidden relative border border-cyber-blue/30 rounded-2xl flex flex-col hud-scanlines shadow-[0_0_50px_rgba(0,240,255,0.15)]">
       
-      {/* ---------------------------------------------------- */}
-      {/* Dynamic Authorization Modal Card Overlay             */}
-      {/* ---------------------------------------------------- */}
+      {/* Canvas Animated Particle Background */}
+      <ParticleField />
+
+      {/* Slide Toast Alerts Overlay */}
+      <NotificationToast 
+        notifications={notifications} 
+        onClose={id => setNotifications(prev => prev.filter(n => n.id !== id))} 
+      />
+
+      {/* Quick Access Palette Dialog */}
+      <CommandPalette 
+        isOpen={isCommandPaletteOpen} 
+        onClose={() => setIsCommandPaletteOpen(false)} 
+        onExecuteCommand={handleExecutePaletteCommand}
+      />
+
+      {/* Dangerous Confirmation Gate Card Modal */}
       <AnimatePresence>
         {permissionRequest && (
           <motion.div 
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="absolute inset-0 bg-cyber-darker/90 backdrop-blur-md z-40 flex items-center justify-center p-6"
+            className="absolute inset-0 bg-cyber-darker/90 backdrop-blur-md z-50 flex items-center justify-center p-6"
           >
             <motion.div 
               initial={{ scale: 0.9, y: 20 }}
               animate={{ scale: 1, y: 0 }}
               exit={{ scale: 0.9, y: 20 }}
-              className="w-full max-w-sm bg-cyber-dark border-2 border-orange-500 rounded-xl p-5 shadow-[0_0_30px_rgba(249,115,22,0.4)] flex flex-col gap-4 text-center"
+              className="w-full max-w-md bg-cyber-dark border-2 border-orange-500 rounded-xl p-5 shadow-[0_0_30px_rgba(249,115,22,0.4)] flex flex-col gap-4 text-center"
             >
               <div className="flex justify-center text-orange-500 animate-pulse">
                 <ShieldAlert size={48} />
@@ -463,7 +648,7 @@ export default function App() {
                 SECURITY DIRECTIVE GATE
               </h3>
               <p className="text-xs text-slate-300 leading-relaxed">
-                J.A.R.V.I.S. is requesting confirmation to execute a high-risk operation:
+                J.A.R.V.I.S. is requesting authorization to execute a high-risk operation:
               </p>
               
               <div className="bg-cyber-darker border border-orange-500/30 rounded-lg p-3 text-left font-mono text-[10px] text-orange-300 overflow-x-auto">
@@ -494,32 +679,40 @@ export default function App() {
         )}
       </AnimatePresence>
 
-      {/* Top Header */}
+      {/* Top Drag bar Header */}
       <header className="h-12 w-full flex items-center justify-between px-4 border-b border-cyber-blue/20 bg-cyber-darker/60 z-10 drag-handle">
         <div className="flex items-center gap-2">
-          <div className={`h-2 w-2 rounded-full ${status === 'listening' ? 'bg-orange-500 animate-pulse' : 'bg-cyber-blue animate-pulse'}`} />
+          <div className={`h-2.5 w-2.5 rounded-full ${status === 'listening' ? 'bg-orange-500 animate-pulse' : 'bg-cyber-blue animate-pulse'}`} />
           <h1 className="font-orbitron font-bold tracking-widest text-xs text-cyber-blue text-glow">
-            J.A.R.V.I.S. // CENTRAL_HUD
+            J.A.R.V.I.S. // CENTRAL_COMMAND_MATRIX
           </h1>
+          <span className="text-[8px] font-mono text-slate-500 border border-slate-800 px-1.5 py-0.5 rounded ml-2">
+            V2.0-STABLE
+          </span>
         </div>
         
         {/* Header Actions */}
         <div className="flex items-center gap-3">
           <button 
+            onClick={() => setIsCommandPaletteOpen(true)}
+            className="hover:text-cyber-blue transition-colors focus:outline-none flex items-center gap-1 text-[9px] font-mono text-slate-400 bg-slate-900 border border-slate-800 px-2 py-0.5 rounded"
+            title="Open Command Palette"
+          >
+            <span>Ctrl + K</span>
+          </button>
+          <button 
             onClick={() => setShowSettings(true)}
             className="hover:text-cyber-blue transition-colors focus:outline-none"
-            title="Systems Matrix Setup"
+            title="Core Configuration"
           >
             <SettingsIcon size={16} />
           </button>
-          
           <button 
             onClick={minimizeApp} 
             className="hover:text-cyber-blue transition-colors text-slate-400 font-bold focus:outline-none"
           >
             &mdash;
           </button>
-          
           <button 
             onClick={closeApp} 
             className="hover:text-red-500 transition-colors text-slate-400 font-bold focus:outline-none"
@@ -529,20 +722,23 @@ export default function App() {
         </div>
       </header>
 
-      {/* Grid HUD Layout */}
-      <div className="flex-1 flex flex-col md:flex-row overflow-hidden p-4 gap-4">
+      {/* Main UI layout Grid */}
+      <div className="flex-1 flex flex-col md:flex-row overflow-hidden p-4 gap-4 z-10">
         
-        {/* Chat / Hologram Widget Pane */}
+        {/* Left Side: Conversational Terminal & Hologram Arc Rings */}
         <div className="flex-1 flex flex-col justify-between overflow-hidden gap-4">
           
-          {/* Hologram Circle */}
+          {/* Hologram Animation Core Widget */}
           <div className="h-44 flex flex-col items-center justify-center relative">
-            <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-20">
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-25">
+              {/* Spinning Rings */}
               <div className="w-40 h-40 rounded-full border border-cyber-blue animate-spin-slow" />
-              <div className="absolute w-32 h-32 rounded-full border border-dashed border-cyber-blue animate-spin-reverse" />
-              <div className="absolute w-24 h-24 rounded-full border border-cyber-blue animate-pulse-slow" />
+              <div className="absolute w-36 h-36 rounded-full border border-dashed border-cyan-400 animate-spin-reverse" />
+              <div className="absolute w-28 h-28 rounded-full border border-cyber-blue animate-pulse-slow" />
+              <div className="absolute w-20 h-20 rounded-full border border-double border-cyan-500" />
             </div>
 
+            {/* Glowing Microphone Central Orb */}
             <button
               onClick={handleMicToggle}
               className={`relative z-10 w-20 h-20 rounded-full flex items-center justify-center border-2 border-cyber-blue transition-all duration-300 focus:outline-none ${
@@ -556,36 +752,36 @@ export default function App() {
               {status === 'listening' ? <Mic size={32} /> : <Volume2 size={32} />}
             </button>
 
-            {/* Waveforms */}
+            {/* Dynamic Waveform Visualizer */}
             <div className="mt-3 w-48 h-6 flex items-center justify-center gap-1">
               {status === 'idle' && (
-                <div className="text-[10px] font-mono tracking-widest text-cyber-blue/40 uppercase">System Calibrated</div>
+                <div className="text-[9px] font-mono tracking-widest text-cyber-blue/40 uppercase">System Ready</div>
               )}
               {status === 'listening' && (
                 <div className="flex gap-1 items-end h-full">
-                  {[...Array(6)].map((_, i) => (
+                  {[...Array(8)].map((_, i) => (
                     <motion.div 
                       key={i} 
                       className="w-1 bg-orange-500 rounded"
-                      animate={{ height: [4, 16, 4] }}
-                      transition={{ duration: 0.6, repeat: Infinity, delay: i * 0.1 }}
+                      animate={{ height: [4, 18, 4] }}
+                      transition={{ duration: 0.5, repeat: Infinity, delay: i * 0.08 }}
                     />
                   ))}
                 </div>
               )}
               {status === 'thinking' && (
-                <div className="text-[10px] font-mono tracking-widest text-cyan-400/80 animate-pulse uppercase">
-                  ACCESSING KNOWLEDGE MATRIX
+                <div className="text-[9px] font-mono tracking-widest text-cyan-400/80 animate-pulse uppercase">
+                  Thinking...
                 </div>
               )}
               {status === 'speaking' && (
                 <div className="flex gap-1 items-center justify-center h-full">
-                  {[...Array(12)].map((_, i) => (
+                  {[...Array(15)].map((_, i) => (
                     <motion.div 
                       key={i} 
                       className="w-1 bg-cyber-blue rounded"
                       animate={{ height: [2, Math.random() * 20 + 2, 2] }}
-                      transition={{ duration: 0.4, repeat: Infinity, delay: i * 0.05 }}
+                      transition={{ duration: 0.4, repeat: Infinity, delay: i * 0.04 }}
                     />
                   ))}
                 </div>
@@ -614,16 +810,16 @@ export default function App() {
                     <div 
                       className={`max-w-[85%] rounded-lg p-3 text-xs leading-relaxed ${
                         msg.role === 'user' 
-                          ? 'bg-cyber-blue/10 border border-cyber-blue/30 text-right text-cyber-blue shadow-[0_0_10px_rgba(0,240,255,0.05)]'
+                          ? 'bg-cyber-blue/10 border border-cyber-blue/30 text-right text-cyber-blue shadow-[0_0_10px_rgba(0,240,255,0.05)] font-mono'
                           : 'bg-cyber-darker/60 border border-slate-700/50 text-left text-slate-200'
                       }`}
                     >
                       {msg.content}
                     </div>
                     
-                    {/* Multimodal image preview renders */}
+                    {/* Visual file assets previews */}
                     {containsScreen && (
-                      <div className="mt-2 w-48 border border-cyber-blue/30 rounded-lg overflow-hidden shadow-lg bg-cyber-darker/80 p-1 animate-fadeIn">
+                      <div className="mt-2 w-52 border border-cyber-blue/30 rounded-lg overflow-hidden shadow-lg bg-cyber-darker/80 p-1">
                         <span className="text-[8px] font-mono text-cyan-400 block px-1 pb-1">SCREENSHOT SOURCE VIEW</span>
                         <img 
                           src={`http://127.0.0.1:8000/cache/screen_view.png?t=${cacheBuster}`} 
@@ -634,7 +830,7 @@ export default function App() {
                       </div>
                     )}
                     {containsWebcam && (
-                      <div className="mt-2 w-48 border border-cyber-blue/30 rounded-lg overflow-hidden shadow-lg bg-cyber-darker/80 p-1 animate-fadeIn">
+                      <div className="mt-2 w-52 border border-cyber-blue/30 rounded-lg overflow-hidden shadow-lg bg-cyber-darker/80 p-1">
                         <span className="text-[8px] font-mono text-cyan-400 block px-1 pb-1">WEBCAM SOURCE VIEW</span>
                         <img 
                           src={`http://127.0.0.1:8000/cache/webcam_view.jpg?t=${cacheBuster}`} 
@@ -650,7 +846,7 @@ export default function App() {
               
               {transcript && (
                 <div className="flex justify-end">
-                  <div className="max-w-[85%] rounded-lg p-3 text-xs bg-orange-500/10 border border-orange-500/30 text-orange-400 animate-pulse">
+                  <div className="max-w-[85%] rounded-lg p-3 text-xs bg-orange-500/10 border border-orange-500/30 text-orange-400 animate-pulse font-mono">
                     {transcript}
                   </div>
                 </div>
@@ -663,18 +859,17 @@ export default function App() {
                   </div>
                 </div>
               )}
-              
               <div ref={chatEndRef} />
             </div>
           </div>
           
-          {/* Form manual trigger */}
+          {/* Submit form area */}
           <form onSubmit={handleManualSubmit} className="flex gap-2 relative">
             <input 
               type="text" 
               value={inputText}
               onChange={(e) => setInputText(e.target.value)}
-              placeholder={status === 'listening' ? "Verbal processing stream active..." : "Initiate command directive, Sir..."}
+              placeholder={status === 'listening' ? "Voice input stream processing..." : "Initialize directive to J.A.R.V.I.S..."}
               className="flex-1 bg-cyber-darker/60 border border-cyber-blue/20 rounded-xl px-4 py-3 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyber-blue/50 transition-colors font-mono"
             />
             <button 
@@ -684,85 +879,83 @@ export default function App() {
               <Send size={16} />
             </button>
           </form>
-
         </div>
 
-        {/* ---------------------------------------------------- */}
-        {/* Dynamic Multi-HUD Sidebar Tab System                 */}
-        {/* ---------------------------------------------------- */}
+        {/* Right Side: Multi-HUD Sidebar Grid (8 tabs) */}
         <div className="w-full md:w-96 flex flex-col bg-cyber-darker/40 border border-cyber-blue/15 rounded-xl p-3 select-none overflow-hidden">
           
-          {/* Tabs Selector Header */}
-          <div className="grid grid-cols-3 gap-1.5 border-b border-cyber-blue/20 pb-2 mb-3">
-            {['diagnostics', 'processes', 'scheduler'].map(tab => (
+          {/* Tabs header scrollable wrapper */}
+          <div className="flex gap-1 overflow-x-auto border-b border-cyber-blue/20 pb-2 mb-3 scrollbar-none">
+            {[
+              { id: 'diagnostics', label: 'Diag', icon: <Cpu size={10} /> },
+              { id: 'processes', label: 'Proc', icon: <Terminal size={10} /> },
+              { id: 'memory', label: 'Mem', icon: <Database size={10} /> },
+              { id: 'automation', label: 'Auto', icon: <Clock size={10} /> },
+              { id: 'plugins', label: 'Plug', icon: <Github size={10} /> },
+              { id: 'vision', label: 'Vision', icon: <Eye size={10} /> },
+              { id: 'network', label: 'Net', icon: <Network size={10} /> },
+              { id: 'clipboard', label: 'Clip', icon: <Clipboard size={10} /> }
+            ].map(tab => (
               <button
-                key={tab}
-                onClick={() => setActiveHudTab(tab)}
-                className={`py-1.5 rounded text-[8px] font-orbitron font-bold tracking-widest uppercase transition-all ${
-                  activeHudTab === tab 
+                key={tab.id}
+                onClick={() => setActiveHudTab(tab.id)}
+                className={`py-1.5 px-2.5 rounded flex items-center gap-1 text-[8px] font-orbitron font-bold tracking-wider uppercase transition-all whitespace-nowrap ${
+                  activeHudTab === tab.id 
                     ? 'bg-cyber-blue/20 text-cyber-blue border border-cyber-blue/40 text-glow'
                     : 'bg-transparent text-slate-500 hover:text-slate-300'
                 }`}
               >
-                {tab}
+                {tab.icon}
+                {tab.label}
               </button>
             ))}
           </div>
 
           <div className="flex-1 flex flex-col overflow-y-auto">
-            {/* Tab: Diagnostics */}
+            
+            {/* Tab 1: Diagnostics */}
             {activeHudTab === 'diagnostics' && (
               <div className="space-y-4">
-                <div className="text-[10px] font-orbitron tracking-widest text-cyber-blue/60 mb-2 border-b border-cyber-blue/10 pb-1">
+                <div className="text-[9px] font-orbitron tracking-widest text-cyber-blue/60 mb-2 border-b border-cyber-blue/10 pb-1 uppercase">
                   SYSTEM CORE METRICS
                 </div>
-                {/* CPU */}
-                <div>
-                  <div className="flex items-center justify-between text-[9px] font-mono text-slate-400 mb-1">
-                    <span className="flex items-center gap-1"><Cpu size={10} /> PROCESSOR</span>
-                    <span>{Math.round(systemStats.cpu)}%</span>
-                  </div>
-                  <div className="h-1 bg-slate-800 rounded-full overflow-hidden">
-                    <div className="h-full bg-cyber-blue shadow-[0_0_8px_#00f0ff] transition-all duration-500" style={{ width: `${systemStats.cpu}%` }} />
-                  </div>
+                
+                {/* 4-ring grid */}
+                <div className="grid grid-cols-2 gap-3">
+                  <SystemRingChart value={systemStats.cpu} label="Processor" icon={<Cpu size={12} />} color="#00f0ff" />
+                  <SystemRingChart value={systemStats.ram} label="Memory Stack" icon={<HardDrive size={12} />} color="#00f0ff" />
+                  <SystemRingChart value={systemStats.disk} label="Disk Storage" icon={<Database size={12} />} color="#00f0ff" />
+                  <SystemRingChart value={systemStats.battery} label="Battery" icon={<Battery size={12} />} color={systemStats.battery > 30 ? "#10b981" : "#f97316"} />
                 </div>
-                {/* RAM */}
-                <div>
-                  <div className="flex items-center justify-between text-[9px] font-mono text-slate-400 mb-1">
-                    <span className="flex items-center gap-1"><HardDrive size={10} /> MEMORY STACK</span>
-                    <span>{Math.round(systemStats.ram)}%</span>
+
+                {/* Additional metrics */}
+                <div className="bg-cyber-darker/60 border border-cyber-blue/10 rounded-lg p-3 space-y-2 text-[10px] font-mono">
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">GPU Core:</span>
+                    <span className="text-cyber-blue font-bold">{systemStats.gpu_usage}%</span>
                   </div>
-                  <div className="h-1 bg-slate-800 rounded-full overflow-hidden">
-                    <div className="h-full bg-cyber-blue shadow-[0_0_8px_#00f0ff] transition-all duration-500" style={{ width: `${systemStats.ram}%` }} />
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">GPU VRAM:</span>
+                    <span className="text-cyber-blue">{systemStats.gpu_memory}%</span>
                   </div>
-                </div>
-                {/* TEMP */}
-                <div>
-                  <div className="flex items-center justify-between text-[9px] font-mono text-slate-400 mb-1">
-                    <span className="flex items-center gap-1"><Thermometer size={10} /> TEMPERATURE</span>
-                    <span>{Math.round(systemStats.temperature)}&deg;C</span>
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">Temperature:</span>
+                    <span className="text-orange-400">{systemStats.temperature}°C</span>
                   </div>
-                  <div className="h-1 bg-slate-800 rounded-full overflow-hidden">
-                    <div className="h-full bg-cyber-blue shadow-[0_0_8px_#00f0ff] transition-all duration-500" style={{ width: `${Math.min(100, Math.max(0, systemStats.temperature))}%` }} />
-                  </div>
-                </div>
-                {/* BATT */}
-                <div>
-                  <div className="flex items-center justify-between text-[9px] font-mono text-slate-400 mb-1">
-                    <span className="flex items-center gap-1"><Battery size={10} /> CELL BATTERY</span>
-                    <span>{systemStats.battery}%</span>
-                  </div>
-                  <div className="h-1 bg-slate-800 rounded-full overflow-hidden">
-                    <div className="h-full bg-cyber-blue shadow-[0_0_8px_#00f0ff] transition-all duration-500" style={{ width: `${systemStats.battery}%` }} />
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">Power Line:</span>
+                    <span className={systemStats.power_plugged ? "text-emerald-500" : "text-amber-500"}>
+                      {systemStats.power_plugged ? "Connected" : "Battery Mode"}
+                    </span>
                   </div>
                 </div>
               </div>
             )}
 
-            {/* Tab: Processes */}
+            {/* Tab 2: Processes */}
             {activeHudTab === 'processes' && (
               <div className="flex-1 flex flex-col overflow-hidden">
-                <div className="text-[10px] font-orbitron tracking-widest text-cyber-blue/60 mb-2 border-b border-cyber-blue/10 pb-1 flex justify-between items-center">
+                <div className="text-[9px] font-orbitron tracking-widest text-cyber-blue/60 mb-2 border-b border-cyber-blue/10 pb-1 flex justify-between items-center">
                   <span>RUNNING PROCESSES</span>
                   <span className="text-[8px] font-mono text-slate-500">Top Memory</span>
                 </div>
@@ -772,7 +965,7 @@ export default function App() {
                     <div className="text-slate-500 text-center py-4">Polling processes...</div>
                   ) : (
                     processList.map((proc, idx) => (
-                      <div key={idx} className="flex justify-between items-center bg-cyber-darker/40 border border-cyber-blue/5 rounded p-1.5">
+                      <div key={idx} className="flex justify-between items-center bg-cyber-darker/40 border border-cyber-blue/5 rounded p-1.5 hover:border-cyber-blue/20 transition-all">
                         <span className="truncate w-36 text-slate-300 font-bold" title={proc.name}>
                           {proc.name}
                         </span>
@@ -787,55 +980,295 @@ export default function App() {
               </div>
             )}
 
-            {/* Tab: Scheduler & Automation */}
-            {activeHudTab === 'scheduler' && (
+            {/* Tab 3: Long-term Memory database */}
+            {activeHudTab === 'memory' && (
               <div className="space-y-4">
-                <div className="text-[10px] font-orbitron tracking-widest text-cyber-blue/60 mb-2 border-b border-cyber-blue/10 pb-1">
-                  AUTOMATION AGENTS
-                </div>
-                
-                {/* Downloads Watcher Card */}
-                <div className="bg-cyber-darker/60 border border-cyber-blue/10 rounded-lg p-2.5 space-y-1 text-xs">
-                  <div className="flex justify-between items-center font-orbitron font-bold text-[10px] text-cyber-blue">
-                    <span className="flex items-center gap-1"><Clock size={10} /> DOWNLOADS ORGANIZER</span>
-                    <span className="text-emerald-500 text-[8px] border border-emerald-500/20 px-1 rounded">ACTIVE</span>
-                  </div>
-                  <p className="text-[10px] text-slate-400">
-                    Directory watcher actively scans and organizes downloaded files based on file extensions.
-                  </p>
-                  <button 
-                    onClick={handleQuickOrganize}
-                    className="w-full mt-2 bg-cyber-blue/10 hover:bg-cyber-blue/20 border border-cyber-blue/30 text-cyber-blue font-mono font-bold py-1.5 rounded text-[9px] tracking-wider uppercase transition-all"
-                  >
-                    Force Sort Directory
-                  </button>
+                <div className="text-[9px] font-orbitron tracking-widest text-cyber-blue/60 mb-2 border-b border-cyber-blue/10 pb-1 uppercase">
+                  Memory Database
                 </div>
 
-                {/* Scheduled diagnostics card */}
-                <div className="bg-cyber-darker/60 border border-cyber-blue/10 rounded-lg p-2.5 space-y-1 text-xs opacity-75">
-                  <div className="flex justify-between items-center font-orbitron font-bold text-[10px] text-slate-400">
-                    <span className="flex items-center gap-1"><Clock size={10} /> RECURRING_DIAGNOSTICS</span>
-                    <span className="text-slate-500 text-[8px]">INTERVAL (30s)</span>
-                  </div>
-                  <p className="text-[10px] text-slate-400">
-                    Automatically checks core temperatures and logs anomalies to standard SQLite memory stack.
-                  </p>
+                <form onSubmit={handleAddMemory} className="bg-cyber-darker/60 border border-cyber-blue/10 p-2.5 rounded-lg space-y-2">
+                  <div className="text-[8px] font-mono text-slate-500 uppercase">Write memory fact:</div>
+                  <input 
+                    type="text" 
+                    placeholder="Key e.g. user_birthday"
+                    value={newMemoryKey}
+                    onChange={e => setNewMemoryKey(e.target.value)}
+                    className="w-full bg-cyber-darker border border-cyber-blue/20 rounded p-1.5 text-[10px] text-white focus:outline-none focus:border-cyber-blue/40"
+                  />
+                  <input 
+                    type="text" 
+                    placeholder="Value e.g. Oct 12"
+                    value={newMemoryValue}
+                    onChange={e => setNewMemoryValue(e.target.value)}
+                    className="w-full bg-cyber-darker border border-cyber-blue/20 rounded p-1.5 text-[10px] text-white focus:outline-none focus:border-cyber-blue/40"
+                  />
+                  <button 
+                    type="submit"
+                    className="w-full bg-cyber-blue/20 hover:bg-cyber-blue/30 border border-cyber-blue/40 text-cyber-blue text-[9px] font-mono py-1 rounded"
+                  >
+                    Commit Memory Fact
+                  </button>
+                </form>
+
+                <div className="space-y-1.5 max-h-56 overflow-y-auto">
+                  {memoryEntries.map(e => (
+                    <div key={e.key} className="bg-cyber-darker/40 border border-cyber-blue/5 rounded p-2 text-[10px] flex justify-between items-start font-mono">
+                      <div className="min-w-0 flex-1 pr-2">
+                        <span className="text-cyan-400 font-bold text-[9px] block uppercase leading-none mb-0.5">{e.key}</span>
+                        <span className="text-slate-300 break-words">{e.value}</span>
+                      </div>
+                      <button 
+                        onClick={() => handleDeleteMemory(e.key)}
+                        className="text-slate-500 hover:text-red-400 transition-colors"
+                      >
+                        <Trash2 size={12} />
+                      </button>
+                    </div>
+                  ))}
                 </div>
               </div>
             )}
+
+            {/* Tab 4: Scheduler & Folders watcher */}
+            {activeHudTab === 'automation' && (
+              <div className="space-y-4">
+                <div className="text-[9px] font-orbitron tracking-widest text-cyber-blue/60 mb-2 border-b border-cyber-blue/10 pb-1 uppercase">
+                  AUTOMATION AGENTS
+                </div>
+
+                {/* Add task */}
+                <form onSubmit={handleAddSchedulerTask} className="bg-cyber-darker/60 border border-cyber-blue/10 p-2.5 rounded-lg space-y-2">
+                  <div className="text-[8px] font-mono text-slate-500 uppercase">Create automation task:</div>
+                  <input 
+                    type="text" 
+                    placeholder="Task name e.g. Run Diagnostics"
+                    value={newTaskName}
+                    onChange={e => setNewTaskName(e.target.value)}
+                    className="w-full bg-cyber-darker border border-cyber-blue/20 rounded p-1.5 text-[10px] text-white focus:outline-none focus:border-cyber-blue/40"
+                  />
+                  <input 
+                    type="text" 
+                    placeholder="Shell command to run"
+                    value={newTaskCommand}
+                    onChange={e => setNewTaskCommand(e.target.value)}
+                    className="w-full bg-cyber-darker border border-cyber-blue/20 rounded p-1.5 text-[10px] text-white focus:outline-none focus:border-cyber-blue/40"
+                  />
+                  <button 
+                    type="submit"
+                    className="w-full bg-cyber-blue/20 hover:bg-cyber-blue/30 border border-cyber-blue/40 text-cyber-blue text-[9px] font-mono py-1.5 rounded"
+                  >
+                    Schedule Task
+                  </button>
+                </form>
+
+                {/* List Tasks */}
+                <div className="space-y-1.5">
+                  {scheduledTasks.map(t => (
+                    <div key={t.id} className="bg-cyber-darker/40 border border-cyber-blue/5 rounded p-2 text-[10px] flex justify-between items-center font-mono">
+                      <div>
+                        <span className="text-cyan-400 font-bold block">{t.name}</span>
+                        <span className="text-slate-500 text-[8px]">Next: {t.next_run ? t.next_run.slice(11,19) : 'None'}</span>
+                      </div>
+                      <button 
+                        onClick={() => handleDeleteSchedulerTask(t.id)}
+                        className="text-slate-500 hover:text-red-400 transition-colors"
+                      >
+                        <X size={14} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="text-[9px] font-orbitron tracking-widest text-cyber-blue/60 mb-2 border-b border-cyber-blue/10 pb-1 uppercase">
+                  Directory Watcher
+                </div>
+
+                {/* Directory watcher form */}
+                <form onSubmit={handleAddWatcher} className="bg-cyber-darker/60 border border-cyber-blue/10 p-2.5 rounded-lg space-y-2">
+                  <input 
+                    type="text" 
+                    placeholder="Folder path e.g. C:\Downloads"
+                    value={newWatchPath}
+                    onChange={e => setNewWatchPath(e.target.value)}
+                    className="w-full bg-cyber-darker border border-cyber-blue/20 rounded p-1.5 text-[10px] text-white focus:outline-none"
+                  />
+                  <label className="flex items-center gap-2 text-[10px] text-slate-400 font-mono">
+                    <input 
+                      type="checkbox" 
+                      checked={newWatchAutoOrganize} 
+                      onChange={e => setNewWatchAutoOrganize(e.target.checked)}
+                      className="border border-cyber-blue/30 rounded"
+                    />
+                    Auto-organize dropped files
+                  </label>
+                  <button 
+                    type="submit"
+                    className="w-full bg-cyber-blue/20 hover:bg-cyber-blue/30 border border-cyber-blue/40 text-cyber-blue text-[9px] font-mono py-1 rounded"
+                  >
+                    Start Folder Watcher
+                  </button>
+                </form>
+
+                <div className="space-y-1">
+                  {folderWatchers.map(w => (
+                    <div key={w.path} className="bg-cyber-darker/40 border border-cyber-blue/5 rounded p-2 text-[9px] flex justify-between items-center font-mono">
+                      <span className="truncate w-64 text-slate-300" title={w.path}>{w.path}</span>
+                      <button onClick={() => handleStopWatcher(w.path)} className="text-red-500 hover:text-red-400 font-bold">
+                        Stop
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Tab 5: Plugins */}
+            {activeHudTab === 'plugins' && (
+              <div className="space-y-3">
+                <div className="text-[9px] font-orbitron tracking-widest text-cyber-blue/60 mb-2 border-b border-cyber-blue/10 pb-1 uppercase">
+                  SYSTEM PLUGINS
+                </div>
+
+                {pluginsList.map(plugin => (
+                  <div key={plugin.name} className="bg-cyber-darker/60 border border-cyber-blue/10 rounded-lg p-2.5 text-xs font-mono relative">
+                    <div className="flex justify-between items-center text-cyan-400 font-bold uppercase text-[10px] mb-1">
+                      <span>{plugin.name}</span>
+                      <span className="text-[8px] border border-emerald-500/20 text-emerald-500 px-1 rounded">ACTIVE</span>
+                    </div>
+                    <p className="text-[10px] text-slate-400 leading-normal mb-2">
+                      {plugin.description}
+                    </p>
+                    <div className="flex flex-wrap gap-1">
+                      {plugin.tools.map(tool => (
+                        <span key={tool} className="text-[8px] bg-slate-900 border border-slate-800 text-slate-400 px-1.5 py-0.5 rounded">
+                          {tool}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Tab 6: Vision Capture Stream */}
+            {activeHudTab === 'vision' && (
+              <div className="space-y-4">
+                <div className="text-[9px] font-orbitron tracking-widest text-cyber-blue/60 mb-2 border-b border-cyber-blue/10 pb-1 uppercase">
+                  Vision Matrix
+                </div>
+
+                <div className="border border-cyber-blue/30 rounded-lg overflow-hidden bg-cyber-darker/80 p-1.5">
+                  <div className="flex justify-between text-[8px] font-mono text-cyan-400 pb-1.5">
+                    <span>LIVE SCREEN PREVIEW</span>
+                    <button 
+                      onClick={() => setCacheBuster(Date.now())}
+                      className="hover:text-white"
+                    >
+                      Refresh
+                    </button>
+                  </div>
+                  <img 
+                    src={`http://127.0.0.1:8000/cache/screen_view.png?t=${cacheBuster}`} 
+                    alt="Active screenshot view"
+                    className="w-full h-auto rounded border border-cyber-blue/10 object-contain max-h-36"
+                    onError={(e) => { e.target.src = 'https://placehold.co/400x200/020c1b/00f0ff?text=No+screenshot+cache'; }}
+                  />
+                </div>
+
+                <div className="border border-cyber-blue/30 rounded-lg overflow-hidden bg-cyber-darker/80 p-1.5">
+                  <div className="text-[8px] font-mono text-cyan-400 pb-1.5">WEBCAM MATRIX</div>
+                  <img 
+                    src={`http://127.0.0.1:8000/cache/webcam_view.jpg?t=${cacheBuster}`} 
+                    alt="Active webcam capture view"
+                    className="w-full h-auto rounded border border-cyber-blue/10 object-contain max-h-36"
+                    onError={(e) => { e.target.src = 'https://placehold.co/400x200/020c1b/00f0ff?text=No+webcam+cache'; }}
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Tab 7: Network Info */}
+            {activeHudTab === 'network' && (
+              <div className="space-y-4">
+                <div className="text-[9px] font-orbitron tracking-widest text-cyber-blue/60 mb-2 border-b border-cyber-blue/10 pb-1 uppercase">
+                  NETWORK INFORMATION
+                </div>
+
+                <div className="bg-cyber-darker/60 border border-cyber-blue/10 rounded-lg p-3 space-y-2 text-[10px] font-mono">
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">Connection:</span>
+                    <span className="text-emerald-500 font-bold">ONLINE</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">Gateway Route:</span>
+                    <span className="text-slate-300">127.0.0.1</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">Ping Delay:</span>
+                    <span className="text-cyber-blue">4 ms</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">Data Sent:</span>
+                    <span className="text-slate-300">{(systemStats.cpu * 1.4).toFixed(0)} KB/s</span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Tab 8: Clipboard History */}
+            {activeHudTab === 'clipboard' && (
+              <div className="space-y-3">
+                <div className="text-[9px] font-orbitron tracking-widest text-cyber-blue/60 mb-2 border-b border-cyber-blue/10 pb-1 uppercase">
+                  CLIPBOARD EXPLORER
+                </div>
+
+                <div className="space-y-2">
+                  {clipboardHistory.length === 0 ? (
+                    <div className="text-slate-500 font-mono text-[9px] text-center py-4">
+                      No clipboard history tracked.
+                    </div>
+                  ) : (
+                    clipboardHistory.map((item, idx) => (
+                      <div 
+                        key={idx} 
+                        className="bg-cyber-darker/50 border border-cyber-blue/5 rounded p-2 text-[10px] font-mono relative cursor-pointer hover:border-cyber-blue/30"
+                        onClick={() => {
+                          navigator.clipboard.writeText(item.content);
+                          // Add copy notification
+                          setNotifications(prev => [{
+                            id: Math.random().toString(),
+                            content: "Copied clip from history!",
+                            level: "success"
+                          }, ...prev]);
+                        }}
+                      >
+                        <div className="text-slate-500 text-[8px] leading-none mb-1">
+                          {item.timestamp ? item.timestamp.slice(11, 19) : ''}
+                        </div>
+                        <p className="text-slate-200 line-clamp-2 leading-relaxed select-all">
+                          {item.preview || item.content}
+                        </p>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            )}
+            
           </div>
         </div>
 
       </div>
 
-      {/* Settings Panel */}
+      {/* Futuristic Settings Slide Panel overlay */}
       <AnimatePresence>
         {showSettings && (
           <motion.div 
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="absolute inset-0 bg-cyber-darker/85 backdrop-blur-md z-30 flex justify-end"
+            className="absolute inset-0 bg-cyber-darker/85 backdrop-blur-md z-40 flex justify-end"
           >
             <motion.div 
               initial={{ x: 300 }}
@@ -879,7 +1312,7 @@ export default function App() {
                         type="text" 
                         value={config.gemini_model}
                         onChange={(e) => setConfig(prev => ({ ...prev, gemini_model: e.target.value }))}
-                        className="w-full bg-cyber-darker border border-cyber-blue/20 rounded-lg p-2.5 text-xs text-white focus:outline-none focus:border-cyber-blue/50"
+                        className="w-full bg-cyber-darker border border-cyber-blue/20 rounded-lg p-2.5 text-xs text-white focus:outline-none"
                       />
                     </div>
                   )}
@@ -893,7 +1326,7 @@ export default function App() {
                         type="text" 
                         value={config.openai_model}
                         onChange={(e) => setConfig(prev => ({ ...prev, openai_model: e.target.value }))}
-                        className="w-full bg-cyber-darker border border-cyber-blue/20 rounded-lg p-2.5 text-xs text-white focus:outline-none focus:border-cyber-blue/50"
+                        className="w-full bg-cyber-darker border border-cyber-blue/20 rounded-lg p-2.5 text-xs text-white focus:outline-none"
                       />
                     </div>
                   )}
@@ -907,7 +1340,7 @@ export default function App() {
                         type="text" 
                         value={config.ollama_model}
                         onChange={(e) => setConfig(prev => ({ ...prev, ollama_model: e.target.value }))}
-                        className="w-full bg-cyber-darker border border-cyber-blue/20 rounded-lg p-2.5 text-xs text-white focus:outline-none focus:border-cyber-blue/50"
+                        className="w-full bg-cyber-darker border border-cyber-blue/20 rounded-lg p-2.5 text-xs text-white focus:outline-none"
                       />
                     </div>
                   )}
@@ -919,7 +1352,7 @@ export default function App() {
                     <select 
                       value={config.stt_provider}
                       onChange={(e) => setConfig(prev => ({ ...prev, stt_provider: e.target.value }))}
-                      className="w-full bg-cyber-darker border border-cyber-blue/20 rounded-lg p-2.5 text-xs text-white focus:outline-none focus:border-cyber-blue/50"
+                      className="w-full bg-cyber-darker border border-cyber-blue/20 rounded-lg p-2.5 text-xs text-white focus:outline-none"
                     >
                       <option value="local">SpeechRecognition (Default)</option>
                       <option value="openai">OpenAI Whisper API</option>
@@ -933,7 +1366,7 @@ export default function App() {
                     <select 
                       value={config.tts_provider}
                       onChange={(e) => setConfig(prev => ({ ...prev, tts_provider: e.target.value }))}
-                      className="w-full bg-cyber-darker border border-cyber-blue/20 rounded-lg p-2.5 text-xs text-white focus:outline-none focus:border-cyber-blue/50"
+                      className="w-full bg-cyber-darker border border-cyber-blue/20 rounded-lg p-2.5 text-xs text-white focus:outline-none"
                     >
                       <option value="edge-tts">Edge-TTS (Free Neural)</option>
                       <option value="local">pyttsx3 (Offline Voice)</option>
@@ -948,7 +1381,7 @@ export default function App() {
                     <select 
                       value={config.tts_voice}
                       onChange={(e) => setConfig(prev => ({ ...prev, tts_voice: e.target.value }))}
-                      className="w-full bg-cyber-darker border border-cyber-blue/20 rounded-lg p-2.5 text-xs text-white focus:outline-none focus:border-cyber-blue/50"
+                      className="w-full bg-cyber-darker border border-cyber-blue/20 rounded-lg p-2.5 text-xs text-white focus:outline-none"
                     >
                       {config.tts_provider === 'edge-tts' && voices.edge_tts.map(v => (
                         <option key={v.id} value={v.id}>{v.name}</option>
@@ -961,18 +1394,6 @@ export default function App() {
                       ))}
                     </select>
                   </div>
-
-                  <div>
-                    <label className="block text-[10px] font-mono text-slate-400 uppercase tracking-widest mb-1.5">
-                      Wake Word
-                    </label>
-                    <input 
-                      type="text" 
-                      value={config.wake_word}
-                      onChange={(e) => setConfig(prev => ({ ...prev, wake_word: e.target.value }))}
-                      className="w-full bg-cyber-darker border border-cyber-blue/20 rounded-lg p-2.5 text-xs text-white focus:outline-none focus:border-cyber-blue/50"
-                    />
-                  </div>
                 </div>
               </div>
 
@@ -981,7 +1402,7 @@ export default function App() {
                   onClick={() => handleSaveSettings(config)}
                   className="flex-1 bg-cyber-blue hover:bg-cyber-blue/80 text-cyber-darker font-bold py-2.5 px-4 rounded-lg text-xs tracking-wider transition-colors uppercase font-orbitron"
                 >
-                  Apply System Configuration
+                  Apply System Settings
                 </button>
               </div>
             </motion.div>
