@@ -4,6 +4,8 @@ import asyncio
 import os
 import sys
 import time
+import tempfile
+import subprocess
 from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -283,6 +285,7 @@ async def console_input_loop():
     print("  J.A.R.V.I.S. INTERACTIVE CONSOLE ONLINE")
     print("  Type your commands/queries below, Sir.")
     print("  Console commands:")
+    print("    voice mode      — Hands-free voice operation")
     print("    set api key     — Change your AI API key")
     print("    set provider    — Switch AI provider")
     print("    show config     — Show current configuration")
@@ -317,10 +320,15 @@ async def console_input_loop():
                 _handle_show_config()
                 continue
 
+            elif lower in ["voice mode", "voice", "listen"]:
+                await _voice_mode_loop()
+                continue
+
             # ── Normal AI Query ───────────────────────────────────────
             print("Communicating with agent orchestrator...")
             print("Jarvis: ", end="", flush=True)
             
+            full_response = []
             async def dummy_broadcast(msg):
                 pass
                 
@@ -330,11 +338,215 @@ async def console_input_loop():
             ):
                 if response["type"] == "text":
                     print(response["content"], end="", flush=True)
+                    full_response.append(response["content"])
             print("\n")
         except asyncio.CancelledError:
             break
         except Exception as e:
             print(f"\nDirective execution failure: {e}\n")
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Voice Mode — Fully hands-free voice operation
+# ──────────────────────────────────────────────────────────────────────────────
+
+async def _play_tts_audio(text: str):
+    """Synthesizes speech and plays it through system speakers."""
+    if not text.strip():
+        return
+    try:
+        from speech.tts import tts_manager
+        audio_data = await tts_manager.synthesize(text)
+        if not audio_data:
+            return
+
+        # Save to temp file and play
+        suffix = ".mp3" if settings.TTS_PROVIDER != "local" else ".wav"
+        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False, dir=str(BASE_DIR / "cache")) as f:
+            f.write(audio_data)
+            tmp_path = f.name
+
+        try:
+            # Use Windows Media Player (built-in, zero dependencies)
+            if os.name == "nt":
+                # PowerShell media player — plays and waits
+                ps_cmd = (
+                    f'powershell -NoProfile -Command "'
+                    f'Add-Type -AssemblyName PresentationCore; '
+                    f'$p = New-Object System.Windows.Media.MediaPlayer; '
+                    f'$p.Open([Uri]\'{tmp_path}\'); '
+                    f'$p.Play(); '
+                    f'Start-Sleep -Milliseconds 500; '
+                    f'while ($p.NaturalDuration.HasTimeSpan -and $p.Position -lt $p.NaturalDuration.TimeSpan) {{ Start-Sleep -Milliseconds 100 }}; '
+                    f'Start-Sleep -Milliseconds 200; '
+                    f'$p.Close()"'
+                )
+                await asyncio.to_thread(os.system, ps_cmd)
+            else:
+                # Linux/Mac fallback
+                await asyncio.to_thread(os.system, f'ffplay -nodisp -autoexit "{tmp_path}" 2>/dev/null')
+        finally:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+    except Exception as e:
+        logger.error(f"TTS playback error: {e}")
+
+
+async def _listen_once() -> str:
+    """Listens to the microphone once and returns the transcribed text.
+    Uses sounddevice for recording (no PyAudio dependency needed)."""
+    import sounddevice as sd
+    import soundfile as sf
+    import numpy as np
+    import speech_recognition as sr
+    import io
+    import wave
+
+    SAMPLE_RATE = 16000
+    CHANNELS = 1
+    SILENCE_THRESHOLD = 0.01  # RMS threshold to detect silence
+    SILENCE_DURATION = 1.5    # Seconds of silence before stopping
+    MAX_DURATION = 15         # Max recording seconds
+    MIN_SPEECH_DURATION = 0.5 # Min seconds of audio to consider valid
+
+    def _blocking_listen():
+        print("  🎤 Listening...", end="", flush=True)
+
+        try:
+            # Record with voice activity detection
+            frames = []
+            silence_frames = 0
+            speech_started = False
+            frames_per_check = int(SAMPLE_RATE * 0.1)  # 100ms chunks
+            silence_limit = int(SILENCE_DURATION / 0.1)
+            max_chunks = int(MAX_DURATION / 0.1)
+
+            for i in range(max_chunks):
+                chunk = sd.rec(frames_per_check, samplerate=SAMPLE_RATE,
+                             channels=CHANNELS, dtype='int16', blocking=True)
+                frames.append(chunk)
+
+                # Check RMS energy
+                rms = np.sqrt(np.mean(chunk.astype(np.float32) ** 2)) / 32768.0
+
+                if rms > SILENCE_THRESHOLD:
+                    speech_started = True
+                    silence_frames = 0
+                elif speech_started:
+                    silence_frames += 1
+                    if silence_frames >= silence_limit:
+                        break  # User stopped speaking
+
+            if not speech_started:
+                print(" (no speech)")
+                return ""
+
+            total_audio = np.concatenate(frames, axis=0)
+            duration = len(total_audio) / SAMPLE_RATE
+            if duration < MIN_SPEECH_DURATION:
+                print(" (too short)")
+                return ""
+
+            print(" Processing...", end="", flush=True)
+
+            # Convert to WAV bytes in memory
+            wav_buffer = io.BytesIO()
+            with wave.open(wav_buffer, 'wb') as wf:
+                wf.setnchannels(CHANNELS)
+                wf.setsampwidth(2)  # 16-bit
+                wf.setframerate(SAMPLE_RATE)
+                wf.writeframes(total_audio.tobytes())
+
+            wav_buffer.seek(0)
+
+            # Feed to speech_recognition
+            recognizer = sr.Recognizer()
+            with sr.AudioFile(wav_buffer) as source:
+                audio = recognizer.record(source)
+
+            try:
+                text = recognizer.recognize_google(audio)
+                return text.strip()
+            except sr.UnknownValueError:
+                print(" (couldn't understand)")
+                return ""
+            except sr.RequestError as e:
+                print(f" (API error: {e})")
+                return ""
+
+        except Exception as e:
+            print(f" (mic error: {e})")
+            return ""
+
+    result = await asyncio.to_thread(_blocking_listen)
+    return result
+
+
+async def _voice_mode_loop():
+    """Continuous voice interaction loop — fully hands-free."""
+    print()
+    print("  ╔═══════════════════════════════════════════════╗")
+    print("  ║         VOICE MODE ACTIVATED                  ║")
+    print("  ║                                               ║")
+    print("  ║   Speak naturally. I'm listening, Sir.        ║")
+    print("  ║   Say 'exit voice mode' to return to console. ║")
+    print("  ║   Press Ctrl+C to force stop.                 ║")
+    print("  ╚═══════════════════════════════════════════════╝")
+    print()
+
+    # Announce voice mode activation via TTS
+    await _play_tts_audio("Voice mode activated. I'm listening, Sir.")
+
+    from core.agent import agent_orchestrator
+
+    while True:
+        try:
+            # 1. Listen for speech
+            transcription = await _listen_once()
+
+            if not transcription:
+                print("  (no speech detected)")
+                continue
+
+            print(f"  You: {transcription}")
+
+            # Check for exit command
+            if any(phrase in transcription.lower() for phrase in [
+                "exit voice mode", "stop voice mode", "quit voice mode",
+                "deactivate voice", "stop listening", "switch to text"
+            ]):
+                print("\n  Voice mode deactivated. Returning to console.\n")
+                await _play_tts_audio("Voice mode deactivated, Sir. Returning to console.")
+                break
+
+            # 2. Send to AI agent
+            print("  Jarvis: ", end="", flush=True)
+            full_response = []
+
+            async def dummy_broadcast(msg):
+                pass
+
+            async for response in agent_orchestrator.process_user_input(
+                transcription,
+                websocket_broadcast_fn=dummy_broadcast
+            ):
+                if response["type"] == "text":
+                    print(response["content"], end="", flush=True)
+                    full_response.append(response["content"])
+
+            response_text = "".join(full_response).strip()
+            print("\n")
+
+            # 3. Speak the response
+            if response_text:
+                await _play_tts_audio(response_text)
+
+        except KeyboardInterrupt:
+            print("\n  Voice mode interrupted. Returning to console.\n")
+            break
+        except Exception as e:
+            print(f"\n  Voice mode error: {e}")
+            continue
 
 
 async def _handle_set_api_key():

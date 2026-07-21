@@ -465,7 +465,9 @@ export default function App() {
     setStatus('speaking');
     setIsPlayingAudio(true);
     const base64Data = audioQueueRef.current.shift();
-    const audioUrl = `data:audio/mp3;base64,${base64Data}`;
+    const isWav = base64Data.startsWith('UklGR');
+    const mimeType = isWav ? 'audio/wav' : 'audio/mpeg';
+    const audioUrl = `data:${mimeType};base64,${base64Data}`;
     const audio = new Audio(audioUrl);
     currentAudioRef.current = audio;
     
